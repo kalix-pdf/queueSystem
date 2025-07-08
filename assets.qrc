@@ -1,0 +1,8 @@
+<RCC>
+  <qresource prefix="image">
+    <file>download.jpg</file>
+    <file>logresize.png</file>
+    <file>aisat-bg.jpg</file>
+    <file>reg-bg.jpeg</file>
+  </qresource>
+</RCC>
