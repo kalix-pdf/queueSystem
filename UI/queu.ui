@@ -885,7 +885,7 @@ QPushButton {
   </widget>
  </widget>
  <resources>
-  <include location="assets.qrc"/>
+  <include location="../image/assets.qrc"/>
  </resources>
  <connections/>
 </ui>

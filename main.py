@@ -8,6 +8,8 @@ from form import Ui_GuestForm
 from register import RegisterUi_MainWindow
 from system_db.db_manager import DatabaseManager
 
+from staff.index import Staff_MainWindow
+
 class SharedFormatWindow(QMainWindow):
     def __init__(self, db, main_window, user_id):
         super().__init__()
@@ -165,40 +167,44 @@ class SharedFormatWindow(QMainWindow):
                 QMessageBox.warning(self, "Warning", "Purpose is Required! isa na nga lang yan ayaw mo pa sagutan!!!")
                 return
             
-            # self.cursor.execute("INSERT INTO queue (name, service, user_type, age, purpose, queue_no, window_no, contact) VALUES (?, ?, ?, ?, ?, ?, ?)",
-            #                     (self.user_name, self.module_type, self.login_type, self.user_age, purpose, queue_no, window_no, self.user_contact ))
-                
-            # self.conn.commit()
+            try:
+                self.cursor.execute("INSERT INTO queue (name, service, user_type, age, purpose, queue_no, window_no, contact) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                                    (self.user_name, self.module_type, self.login_type, self.user_age, purpose, queue_no, window_no, self.user_contact ))
+                    
+                self.conn.commit()
 
-            items = [
-                    (f"{window_no}", windowlayout),
-                    (f"{queue_no}", qlayout),
-                    (f"{purpose}", layout),
-                    (f"{self.user_contact}", layout)
-                ]
-            for text, target_layout in items:
-                label = QtWidgets.QLabel(text)
-                target_layout.addWidget(label)
-                if target_layout in [windowlayout, qlayout]:
-                    label.setAlignment(QtCore.Qt.AlignHCenter)
-                    label.setStyleSheet("font-size: 14pt; font-weight: 600;")
-                else:
-                    label.setStyleSheet("font-size: 12pt;")
+                items = [
+                        (f"{window_no}", windowlayout),
+                        (f"{queue_no}", qlayout),
+                        (f"{purpose}", layout),
+                        (f"{self.user_contact}", layout)
+                    ]
+                for text, target_layout in items:
+                    label = QtWidgets.QLabel(text)
+                    target_layout.addWidget(label)
+                    if target_layout in [windowlayout, qlayout]:
+                        label.setAlignment(QtCore.Qt.AlignHCenter)
+                        label.setStyleSheet("font-size: 14pt; font-weight: 600;")
+                    else:
+                        label.setStyleSheet("font-size: 12pt;")
 
-            self.user_info = {
-                'name': self.user_name,
-                'age': self.user_age,
-                'purpose': purpose,
-                'contact': self.user_contact,
-                'queue_no': queue_no,
-                'window_no': window_no,
-                'service_type': self.module_type
-            } 
+                self.user_info = {
+                    'name': self.user_name,
+                    'age': self.user_age,
+                    'purpose': purpose,
+                    'contact': self.user_contact,
+                    'queue_no': queue_no,
+                    'window_no': window_no,
+                    'service_type': self.module_type
+                } 
 
-            self.main_window.store_guest_info(self.user_info)
-            self.main_window.refresh_queue()
-                
-            QMessageBox.information(self, "Success", f"Queued as {queue_no} at Window {window_no}.")
+                self.ui.pushButton.setEnabled(False)
+                self.main_window.store_guest_info(self.user_info)
+                self.main_window.refresh_queue()
+                    
+                QMessageBox.information(self, "Success", f"Queued as {queue_no} at Window {window_no}.")
+            except Exception as e:
+                print(e)
                 
 
     def generate_queue_number(self, window_no):
@@ -210,21 +216,30 @@ class SharedFormatWindow(QMainWindow):
         prefix = prefix_map.get(self.module_type, "Q")
 
         self.cursor.execute(
-            "SELECT queue_no FROM queue WHERE queue_no LIKE ? ORDER BY id DESC LIMIT 1",
-                (f"{prefix}-%",)
-            )
-        result = self.cursor.fetchone()
+            "SELECT queue_no FROM queue WHERE queue_no LIKE ? ORDER BY queue_no ASC",
+            (f"{prefix}-%",)
+        )
+        result = self.cursor.fetchall()
 
-        if result:
-            last_no = int(result[0].split("-")[1])
-            new_no = last_no + 1
-        else:
-            new_no = 1
-        
+        existing_numbers = set()
+        for row in result:
+            try:
+                number_part = int(row[0].split("-")[1])
+                existing_numbers.add(number_part)
+            except (IndexError, ValueError):
+                continue  
+        new_no = 1
+        while new_no in existing_numbers:
+            new_no += 1
+
         return f"{prefix}-{new_no:03d}"
+
     
     def get_least_window(self):
-        available_windows = [1, 2, 3]
+        if self.module_type == 'recordbtn':
+            available_windows = [1, 2]
+        else:
+            available_windows = [1, 2, 3]
 
         window_load = {}
         for win in available_windows:
@@ -369,7 +384,7 @@ class LoginPage(QMainWindow):
 
     def authenticate_user(self):
         try:
-            username = self.ui.username .text().strip()
+            username = self.ui.username.text().strip()
             password = self.ui.password.text().strip()
 
             if not username or not password:
@@ -386,7 +401,7 @@ class LoginPage(QMainWindow):
                 self.close()  
             else:
                 QMessageBox.critical(self, "Login Failed", "Invalid username or password.")
-                self.close()
+                return
         except Exception as e:
             print(e)
     
@@ -427,25 +442,44 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             }
         }
 
+        self.staff_window = Staff_MainWindow()
+        self.staff_window.queue_updated.connect(self.refresh_queue)
+        self.staff_window.show()
+
         self.load_queue(self.layout_per_service)
 
 
     def store_guest_info(self, user_info):
-        self.guest_info = user_info
-        content = f"Your Queue No. is: {self.guest_info['queue_no']}"
-        label = QtWidgets.QLabel(content)
+        try:
+            self.guest_info = user_info
+            service = self.guest_info['service_type']
+            window_no = self.guest_info['window_no']
 
-        print(self.guest_info['service_type'])
-        if self.guest_info['service_type'] == 'accountingbtn':
-            self.verticalLayout_7.addWidget(label)
-        elif self.guest_info['service_type'] == 'admissionbtn':
-            self.verticalLayout_24.addWidget(label)
-        else:
-            self.verticalLayout_4.addWidget(label)
+            self.cursor.execute("SELECT COUNT(*) FROM queue WHERE service = ? AND window_no = ?", (service, window_no))
+            count = self.cursor.fetchone()[0]
 
-        label.setAlignment(QtCore.Qt.AlignHCenter)
-        label.setStyleSheet("font-weight: 600; font-size: 12pt; text-decoration: underline;")
+            def get_ordinal(n):
+                return f"{n}{'th' if 11<=n%100<=13 else {1:'st', 2:'nd', 3:'rd'}.get(n%10, 'th')}"
 
+            content = f"Your Queue No. is: {self.guest_info['queue_no']}\nYou are {get_ordinal(count)} in the line at window {window_no}"
+            label = QtWidgets.QLabel(content)
+
+            label.setAlignment(QtCore.Qt.AlignHCenter)
+            label.setStyleSheet("font-weight: 600; font-size: 11pt; text-decoration: underline;")
+            
+            def get_ordinal(n):
+                return f"{n}{'th' if 11<=n%100<=13 else {1:'st', 2:'nd', 3:'rd'}.get(n%10, 'th')}"
+
+            if service == 'accountingbtn':
+                self.verticalLayout_7.addWidget(label)
+            elif service == 'admissionbtn':
+                self.verticalLayout_24.addWidget(label)
+            else:
+                self.verticalLayout_4.addWidget(label)
+        except Exception as e:
+            print(e)
+
+ 
     def display_existing_guest_info(self):
         info = self.guest_info
         msg = (
