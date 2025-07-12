@@ -1,5 +1,5 @@
 import sys
-from PyQt5.QtWidgets import QApplication, QMainWindow, QFrame, QMessageBox
+from PyQt5.QtWidgets import QApplication, QMainWindow, QFrame, QMessageBox, QLineEdit
 from PyQt5 import QtWidgets, QtCore
 from PyQt5.QtCore import pyqtSignal
 from queu import Ui_MainWindow
@@ -40,9 +40,7 @@ class SharedFormatWindow(QMainWindow):
         if self.login_type == 'user':
             try:
                 layout = self.ui.verticalLayout_11
-                windowlayout = self.ui.verticalLayout_8
-                qlayout = self.ui.verticalLayout_10
-
+                
                 self.ui.nameinput.setReadOnly(True)
                 self.ui.ageinput.setReadOnly(True)
                 self.ui.contactinput.setReadOnly(True)
@@ -155,8 +153,7 @@ class SharedFormatWindow(QMainWindow):
                 self.ui.purposeinput.setReadOnly(True)
                 self.ui.contactinput.setReadOnly(True)
 
-                self.main_window.store_guest_info(self.guest_info)
-                self.main_window.refresh_queue()
+                self.main_window.refresh_queue(self.guest_info)
 
             except Exception as e:
                 QMessageBox.critical(self, "Database Error", f"Failed to insert into database.\n\nError: {str(e)}")
@@ -199,8 +196,7 @@ class SharedFormatWindow(QMainWindow):
                 } 
 
                 self.ui.pushButton.setEnabled(False)
-                self.main_window.store_guest_info(self.user_info)
-                self.main_window.refresh_queue()
+                self.main_window.refresh_queue(self.user_info)
                     
                 QMessageBox.information(self, "Success", f"Queued as {queue_no} at Window {window_no}.")
             except Exception as e:
@@ -361,6 +357,7 @@ class LoginPage(QMainWindow):
         self.ui.Loginbutton.clicked.connect(self.authenticate_user)
         self.ui.guestbutton.clicked.connect(self.login_as_guest_func)
         self.ui.Registerbutton.clicked.connect(self.open_register_window)
+        self.ui.password.setEchoMode(QtWidgets.QLineEdit.Password)
 
     def open_register_window(self):
         self.register_window = RegisterPage(self.db)
@@ -419,7 +416,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.conn = self.db.get_connection()
         self.cursor = self.db.get_cursor()
 
-        self.guest_info = None
+        self.user_info = None
 
         self.Recordbtn.clicked.connect(self.TakeNumber_Clicked)
         self.Accountingbtn.clicked.connect(self.TakeNumber_Clicked)
@@ -443,45 +440,52 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         }
 
         self.staff_window = Staff_MainWindow()
-        self.staff_window.queue_updated.connect(self.refresh_queue)
+        self.staff_window.queue_updated.connect(self.refresh_queue_from_staff)
         self.staff_window.show()
 
         self.load_queue(self.layout_per_service)
 
 
-    def store_guest_info(self, user_info):
+    def store_guest_info(self):
         try:
-            self.guest_info = user_info
-            service = self.guest_info['service_type']
-            window_no = self.guest_info['window_no']
-
+            service = self.user_info['service_type']
+            window_no = self.user_info['window_no']
+            
             self.cursor.execute("SELECT COUNT(*) FROM queue WHERE service = ? AND window_no = ?", (service, window_no))
             count = self.cursor.fetchone()[0]
 
             def get_ordinal(n):
                 return f"{n}{'th' if 11<=n%100<=13 else {1:'st', 2:'nd', 3:'rd'}.get(n%10, 'th')}"
-
-            content = f"Your Queue No. is: {self.guest_info['queue_no']}\nYou are {get_ordinal(count)} in the line at window {window_no}"
+ 
+            if count == 2:
+                QtWidgets.QMessageBox.information(
+                        self,
+                        "Queue Notification",
+                        f"You are next in line!"
+                )
+                content = f"Your Queue No. is: {self.user_info['queue_no']}\nYou are {get_ordinal(count)} in the line at window {window_no}\nYou are next in the Line!"
+            else:
+                content = f"Your Queue No. is: {self.user_info['queue_no']}\nYou are {get_ordinal(count)} in the line at window {window_no}"
+            
             label = QtWidgets.QLabel(content)
-
             label.setAlignment(QtCore.Qt.AlignHCenter)
             label.setStyleSheet("font-weight: 600; font-size: 11pt; text-decoration: underline;")
-            
-            def get_ordinal(n):
-                return f"{n}{'th' if 11<=n%100<=13 else {1:'st', 2:'nd', 3:'rd'}.get(n%10, 'th')}"
 
             if service == 'accountingbtn':
-                self.verticalLayout_7.addWidget(label)
+                self.delete_labels(self.verticalLayout_8)
+                self.verticalLayout_8.insertWidget(0, label)
             elif service == 'admissionbtn':
-                self.verticalLayout_24.addWidget(label)
+                self.delete_labels(self.verticalLayout_25)
+                self.verticalLayout_25.insertWidget(0, label)
             else:
-                self.verticalLayout_4.addWidget(label)
+                self.delete_labels(self.verticalLayout_5)
+                self.verticalLayout_5.insertWidget(0, label)
         except Exception as e:
             print(e)
 
  
     def display_existing_guest_info(self):
-        info = self.guest_info
+        info = self.user_info
         msg = (
             f"Name: {info['name']}\n"
             f"Age: {info['age']}\n"
@@ -494,7 +498,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
 
 
     def TakeNumber_Clicked(self):
-        if self.guest_info:
+        if self.user_info:
             QMessageBox.information(self, "Info", "You have already taken a number!")
             self.display_existing_guest_info()
             return
@@ -563,19 +567,27 @@ class MainWindow(QMainWindow, Ui_MainWindow):
                 if current_count < MAX_DISPLAY:
                     queue_label = QtWidgets.QLabel(str(queue_no))
                     target_layout.addWidget(queue_label)
+
+                    if current_count == 0:
+                        queue_label.setStyleSheet("background-color: #ffc107;")
+
+                    if self.user_info:
+                        if self.user_info['queue_no'] == str(queue_no):
+                            queue_label.setStyleSheet("background-color: rgb(170, 255, 255);")
+                    
                     layout_counts[key] = current_count + 1
 
 
-        for service_layout in layouts_per_services.values():
-            for layout in service_layout.values():
-                if layout.count() > 0:
-                    first_widget = layout.itemAt(0).widget()
-                    if first_widget:
-                        first_widget.setStyleSheet("""
-                    background-color: #ffc107;
-                """)
+    def refresh_queue(self, user_info):
+        self.user_info = user_info
 
-    def refresh_queue(self):
+        if self.user_info:
+            self.store_guest_info()
+
+        self.load_queue(self.layout_per_service)
+
+    def refresh_queue_from_staff(self):
+        self.store_guest_info()
         self.load_queue(self.layout_per_service)
 
 
@@ -585,9 +597,3 @@ if __name__ == "__main__":
     window.show()
     sys.exit(app.exec_())
 
-
-# PANG DEBUG !!
-#  print("DB file:", self.conn.execute("PRAGMA database_list").fetchone()[2])
-#         self.cursor.execute("SELECT name FROM sqlite_master WHERE type='table'")
-#         tables = self.cursor.fetchall()
-#         print("Tables in this DB:", [t[0] for t in tables])

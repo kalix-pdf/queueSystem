@@ -1,5 +1,5 @@
 import sys
-from PyQt5.QtWidgets import QApplication, QMainWindow, QMessageBox, QTableWidget, QTableWidgetItem, QPushButton 
+from PyQt5.QtWidgets import QApplication, QMainWindow, QMessageBox, QTableWidget, QTableWidgetItem, QPushButton, QLineEdit
 from PyQt5 import QtWidgets, QtCore
 from .queue_ui import Ui_MainWindow
 from .login import Ui_LoginWindow
@@ -81,7 +81,7 @@ class shared_Staff_Window(QMainWindow):
             self.timer.timeout.connect(self.load_tab2_content)
         elif self.window_no == 3:
             self.timer.timeout.connect(self.load_tab3_content)
-        self.timer.start(1000)
+        self.timer.start(3000)
     
     def load_window(self, module_type):
         self.module_type = module_type
@@ -185,6 +185,7 @@ class LoginPage(QMainWindow):
         self.cursor = self.db.get_cursor()
 
         self.ui.Loginbutton.clicked.connect(self.authenticate_user)
+        self.ui.password.setEchoMode(QtWidgets.QLineEdit.Password)
 
     def authenticate_user(self):
         username = self.ui.username.text().strip()
@@ -262,6 +263,11 @@ class Staff_MainWindow(QMainWindow, Ui_MainWindow):
                 layout.removeWidget(widget)
                 widget.deleteLater()
     
+    def start_queue_refresh(self):
+        self.timer = QTimer()
+        self.timer.timeout.connect(lambda: self.load_queue(self.layout_per_service))
+        self.timer.start(2000)
+
     #display queue frame, frame 3, frame 6
     def load_queue(self, layouts_per_services):
         
@@ -302,6 +308,9 @@ class Staff_MainWindow(QMainWindow, Ui_MainWindow):
                         first_widget.setStyleSheet("""
                     background-color: #ffc107;
                 """)
+        
+        self.start_queue_refresh()
+        
                         
     def refresh_queue(self):
         self.queue_updated.emit()
